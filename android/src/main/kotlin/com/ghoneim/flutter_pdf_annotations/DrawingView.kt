@@ -57,6 +57,16 @@ class DrawingView(context: Context) : View(context) {
     var onImagePlaced: (() -> Unit)? = null
     var onStrokeAdded: (() -> Unit)? = null
 
+    /**
+     * Called on ACTION_UP for a highlight drag. Receives the raw drag rect in
+     * this view's coordinate space (render-bitmap pixels) and should return
+     * one or more rects to actually store — typically tight-to-text rects
+     * produced by snap-to-text logic in the activity. Return an empty list
+     * to skip the snap and fall back to the raw drag rect (e.g. the rect
+     * didn't hit any text, like a scanned PDF).
+     */
+    var onHighlightFinalize: ((rect: RectF) -> List<RectF>)? = null
+
     /** Called whenever an image is selected (true) or deselected (false). */
     var onImageSelectionChanged: ((Boolean) -> Unit)? = null
 
@@ -380,8 +390,15 @@ class DrawingView(context: Context) : View(context) {
                 MotionEvent.ACTION_UP -> {
                     val rect = RectF(minOf(highlightStartX, x), minOf(highlightStartY, y), maxOf(highlightStartX, x), maxOf(highlightStartY, y))
                     if (rect.width() > 5f && rect.height() > 5f) {
-                        highlights.add(HighlightAnnotationData(rect, highlightColor))
-                        annotationHistory.add(AnnotationType.HIGHLIGHT)
+                        // iOS parity: ask the activity for line-tight rects via
+                        // PDFKit-equivalent text snapping. Empty list → no text
+                        // hit, fall back to the raw drag rect.
+                        val snapped = onHighlightFinalize?.invoke(rect).orEmpty()
+                        val toStore = if (snapped.isNotEmpty()) snapped else listOf(rect)
+                        for (r in toStore) {
+                            highlights.add(HighlightAnnotationData(r, highlightColor))
+                            annotationHistory.add(AnnotationType.HIGHLIGHT)
+                        }
                         onStrokeAdded?.invoke()
                     }
                     currentHighlightRect = null; invalidate(); return true

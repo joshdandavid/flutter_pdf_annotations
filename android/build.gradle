@@ -61,6 +61,9 @@ android {
         implementation 'com.google.android.material:material:1.11.0'
         implementation 'androidx.cardview:cardview:1.1.0'
         implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
+        // PDFBox-Android: text + glyph position extraction so highlight mode
+        // can snap to text the way iOS PDFKit's selection(for:) does.
+        implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
         // Testing dependencies
         testImplementation("org.jetbrains.kotlin:kotlin-test")
         testImplementation("org.mockito:mockito-core:5.0.0")

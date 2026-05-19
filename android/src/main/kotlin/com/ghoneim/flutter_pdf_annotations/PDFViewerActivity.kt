@@ -44,6 +44,11 @@ class PDFViewerActivity : AppCompatActivity() {
     private var currentHighlightColor = Color.argb(128, 255, 255, 0)
     private var originalPdfPath: String? = null
 
+    // Parses the PDF a second time with PDFBox so highlight mode can snap to
+    // text glyphs (iOS parity). PdfRenderer can't expose glyph positions, so
+    // we keep two readers: one for display bitmaps, one for text geometry.
+    private var pdfTextExtractor: PdfTextExtractor? = null
+
     private val availableImages = mutableListOf<Bitmap>()
 
     private enum class AnnotationMode { NONE, DRAW, ERASE, HIGHLIGHT, IMAGE, TEXT }
@@ -90,6 +95,10 @@ class PDFViewerActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // PDFBox-Android needs its embedded resources unpacked before any
+        // PDDocument.load() call. Cheap on subsequent calls.
+        com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(applicationContext)
 
         originalPdfPath = intent?.getStringExtra("filePath")
             ?: run { finishWithError("Missing file path"); return }
@@ -576,6 +585,16 @@ class PDFViewerActivity : AppCompatActivity() {
                 throw e
             }
             pageCount = pdfRenderer!!.pageCount
+
+            // Second reader for glyph positions — used only by highlight mode.
+            // Failure here is non-fatal: we just won't snap to text and will
+            // fall back to raw-rect highlighting (same as a scanned PDF).
+            try {
+                pdfTextExtractor = PdfTextExtractor(file).also { it.open() }
+            } catch (_: Exception) {
+                pdfTextExtractor = null
+            }
+
             for (i in 0 until pageCount) addPageView(i)
         } catch (e: Exception) {
             finishWithError("Error opening PDF: ${e.message}")
@@ -635,6 +654,30 @@ class PDFViewerActivity : AppCompatActivity() {
             }
 
             drawingView.onTextPlacementRequest = { x, y -> showTextInputDialog(drawingView, pageIndex, x, y) }
+
+            // Snap-to-text on highlight finalize. DrawingView stores rects in
+            // render-bitmap pixel space; PdfTextExtractor works in PDF
+            // user-space points. Scale by 1/density on the way in, and by
+            // density on the way out.
+            drawingView.onHighlightFinalize = { rectBitmap ->
+                val extractor = pdfTextExtractor
+                if (extractor == null) {
+                    emptyList()
+                } else {
+                    val inv = if (pageRenderDensity > 0f) 1f / pageRenderDensity else 1f
+                    val rectPdf = RectF(
+                        rectBitmap.left * inv,
+                        rectBitmap.top * inv,
+                        rectBitmap.right * inv,
+                        rectBitmap.bottom * inv,
+                    )
+                    val snappedPdf = extractor.snapToTextLines(pageIndex, rectPdf)
+                    val d = pageRenderDensity
+                    snappedPdf.map { r ->
+                        RectF(r.left * d, r.top * d, r.right * d, r.bottom * d)
+                    }
+                }
+            }
         }
     }
 
@@ -842,6 +885,8 @@ class PDFViewerActivity : AppCompatActivity() {
         // Dart completer is not left hanging.
         reportCancelled()
         pdfRenderer?.close()
+        pdfTextExtractor?.close()
+        pdfTextExtractor = null
         pageBitmaps.forEach { if (!it.isRecycled) it.recycle() }
         pageBitmaps.clear()
     }
