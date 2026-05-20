@@ -112,7 +112,12 @@ class DrawingView(context: Context) : View(context) {
     })
 
     data class AnnotationData(val path: Path, val strokeWidth: Float, val color: Int)
-    data class HighlightAnnotationData(val rect: RectF, val color: Int)
+    /**
+     * One highlight as a list of rects so a snap-to-text drag that produces
+     * multiple per-line strips counts as a single undo step. For an un-snapped
+     * (scanned-PDF fallback) drag the list just has one entry.
+     */
+    data class HighlightAnnotationData(val rects: List<RectF>, val color: Int)
     data class ImageAnnotationData(val bitmap: Bitmap, var rect: RectF)
     data class TextAnnotationData(val text: String, val x: Float, val y: Float, val color: Int, val fontSize: Float)
 
@@ -248,7 +253,10 @@ class DrawingView(context: Context) : View(context) {
         canvas.save()
         canvas.concat(matrix)
 
-        highlights.forEach { h -> highlightPaint.color = h.color; canvas.drawRect(h.rect, highlightPaint) }
+        highlights.forEach { h ->
+            highlightPaint.color = h.color
+            h.rects.forEach { canvas.drawRect(it, highlightPaint) }
+        }
         currentHighlightRect?.let { rect ->
             canvas.drawRect(rect, Paint().apply { style = Paint.Style.FILL; color = highlightColor })
             canvas.drawRect(rect, Paint().apply {
@@ -395,10 +403,8 @@ class DrawingView(context: Context) : View(context) {
                         // hit, fall back to the raw drag rect.
                         val snapped = onHighlightFinalize?.invoke(rect).orEmpty()
                         val toStore = if (snapped.isNotEmpty()) snapped else listOf(rect)
-                        for (r in toStore) {
-                            highlights.add(HighlightAnnotationData(r, highlightColor))
-                            annotationHistory.add(AnnotationType.HIGHLIGHT)
-                        }
+                        highlights.add(HighlightAnnotationData(toStore, highlightColor))
+                        annotationHistory.add(AnnotationType.HIGHLIGHT)
                         onStrokeAdded?.invoke()
                     }
                     currentHighlightRect = null; invalidate(); return true

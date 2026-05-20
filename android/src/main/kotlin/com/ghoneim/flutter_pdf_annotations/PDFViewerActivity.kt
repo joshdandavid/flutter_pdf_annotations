@@ -745,7 +745,8 @@ class PDFViewerActivity : AppCompatActivity() {
                     documentPage.canvas.scale(invDensity, invDensity)
 
                     drawingViews.getOrNull(i)?.getHighlights()?.forEach { h ->
-                        documentPage.canvas.drawRect(h.rect, Paint().apply { color = h.color; style = Paint.Style.FILL })
+                        val paint = Paint().apply { color = h.color; style = Paint.Style.FILL }
+                        h.rects.forEach { documentPage.canvas.drawRect(it, paint) }
                     }
 
                     drawingViews.getOrNull(i)?.getImageAnnotations()?.forEach { img ->
