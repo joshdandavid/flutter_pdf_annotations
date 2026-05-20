@@ -116,6 +116,12 @@ class PDFAnnotationConfig {
   /// `Colors.yellow.withOpacity(0.5)`.
   final Color? initialHighlightColor;
 
+  /// Initial colour applied to text annotations.
+  ///
+  /// Independent from [initialPenColor] — the text tool now has its own
+  /// colour swatch in the options panel. Defaults to red when omitted.
+  final Color? initialTextColor;
+
   /// Initial stroke width.
   ///
   /// The nearest preset is selected automatically:
@@ -145,6 +151,7 @@ class PDFAnnotationConfig {
     this.title,
     this.initialPenColor,
     this.initialHighlightColor,
+    this.initialTextColor,
     this.initialStrokeWidth,
     this.imagesToInsert,
     this.initialPage = 0,
@@ -160,6 +167,8 @@ class PDFAnnotationConfig {
         if (initialHighlightColor != null)
           'initialHighlightColor':
               initialHighlightColor!.toARGB32().toSigned(32),
+        if (initialTextColor != null)
+          'initialTextColor': initialTextColor!.toARGB32().toSigned(32),
         if (initialStrokeWidth != null) 'initialStrokeWidth': initialStrokeWidth,
         if (initialPage != 0) 'initialPage': initialPage,
         if (locale != null) 'locale': locale!.code,

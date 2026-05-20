@@ -5,6 +5,7 @@ struct PDFAnnotationConfig {
     let title: String?
     let initialPenColor: UIColor?
     let initialHighlightColor: UIColor?
+    let initialTextColor: UIColor?
     let initialStrokeWidth: CGFloat?
     let imagePaths: [String]?
     let initialPage: Int
@@ -193,6 +194,7 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
     private var textButton: UIButton!
     private var tapGesture: UITapGestureRecognizer!
     private var highlightColor: UIColor = UIColor.yellow.withAlphaComponent(0.5)
+    private var textColor: UIColor = .red
     private var highlightStartPoint: CGPoint?
     private var highlightPreviewView: UIView!
     private var currentPath: UIBezierPath?
@@ -295,6 +297,7 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
         guard let cfg = config else { return }
         if let color = cfg.initialPenColor { penColor = color }
         if let color = cfg.initialHighlightColor { highlightColor = color }
+        if let color = cfg.initialTextColor { textColor = color }
         if let width = cfg.initialStrokeWidth { penThickness = width }
         cfg.imagePaths?.forEach { path in
             if let img = UIImage(contentsOfFile: path) {
@@ -502,7 +505,10 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
     }
 
     private func updateColorSwatch() {
-        let c = isHighlightMode ? highlightColor : penColor
+        let c: UIColor
+        if isHighlightMode { c = highlightColor }
+        else if isTextMode { c = textColor }
+        else { c = penColor }
         let size: CGFloat = 36
         let img = UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { ctx in
             c.setFill()
@@ -736,8 +742,6 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
             pdfView.gestureRecognizers = originalGestureRecognizers; scrollView?.isScrollEnabled = true
             highlightButton.tintColor = .secondaryLabel
         }
-        hideOptionsPanel()
-
         isTextMode.toggle()
         if isTextMode {
             originalGestureRecognizers = pdfView.gestureRecognizers
@@ -745,10 +749,13 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
             scrollView = findScrollView(in: pdfView); scrollView?.isScrollEnabled = false
             tapGesture.isEnabled = true
             textButton.tintColor = .systemGreen
+            showOptionsPanel()
+            updateColorSwatch()
         } else {
             pdfView.gestureRecognizers = originalGestureRecognizers; scrollView?.isScrollEnabled = true
             tapGesture.isEnabled = false
             textButton.tintColor = .secondaryLabel
+            hideOptionsPanel()
         }
     }
 
@@ -790,7 +797,7 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
         )
         let ann = PDFAnnotation(bounds: bounds, forType: .freeText, withProperties: nil)
         ann.font = UIFont.systemFont(ofSize: fontSize)
-        ann.fontColor = penColor
+        ann.fontColor = textColor
         ann.color = .clear
         ann.contents = text
         page.addAnnotation(ann)
@@ -953,7 +960,7 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
 
     @objc private func openColorPicker() {
         let picker = UIColorPickerViewController()
-        picker.selectedColor = isHighlightMode ? highlightColor : penColor
+        picker.selectedColor = isHighlightMode ? highlightColor : (isTextMode ? textColor : penColor)
         picker.delegate = self
         present(picker, animated: true)
     }
@@ -1115,6 +1122,7 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
 
     private func applyPickedColor(_ color: UIColor) {
         if isHighlightMode { highlightColor = color.withAlphaComponent(0.5) }
+        else if isTextMode { textColor = color }
         else { penColor = color }
         updateColorSwatch()
     }

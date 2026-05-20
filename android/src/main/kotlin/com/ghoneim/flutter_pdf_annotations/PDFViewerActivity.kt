@@ -42,6 +42,7 @@ class PDFViewerActivity : AppCompatActivity() {
     private var currentStrokeWidth = 8f
     private var currentEraserMode = false
     private var currentHighlightColor = Color.argb(128, 255, 255, 0)
+    private var currentTextColor = Color.RED
     private var originalPdfPath: String? = null
 
     // Parses the PDF a second time with PDFBox so highlight mode can snap to
@@ -168,6 +169,8 @@ class PDFViewerActivity : AppCompatActivity() {
             currentColor = intent.getIntExtra("initialPenColor", currentColor)
         if (intent.hasExtra("initialHighlightColor"))
             currentHighlightColor = intent.getIntExtra("initialHighlightColor", currentHighlightColor)
+        if (intent.hasExtra("initialTextColor"))
+            currentTextColor = intent.getIntExtra("initialTextColor", currentTextColor)
         if (intent.hasExtra("initialStrokeWidth"))
             currentStrokeWidth = intent.getFloatExtra("initialStrokeWidth", currentStrokeWidth)
 
@@ -496,7 +499,7 @@ class PDFViewerActivity : AppCompatActivity() {
         updateColorSwatch()
 
         // Show/hide options panel for draw and highlight modes
-        if (isDrawing || isHighlighting) showOptionsPanel() else hideOptionsPanel()
+        if (isDrawing || isHighlighting || isText) showOptionsPanel() else hideOptionsPanel()
     }
 
     private fun openImagePlacementScreen() {
@@ -569,7 +572,11 @@ class PDFViewerActivity : AppCompatActivity() {
     }
 
     private fun updateColorSwatch() {
-        val color = if (annotationMode == AnnotationMode.HIGHLIGHT) currentHighlightColor else currentColor
+        val color = when (annotationMode) {
+            AnnotationMode.HIGHLIGHT -> currentHighlightColor
+            AnnotationMode.TEXT -> currentTextColor
+            else -> currentColor
+        }
         (colorSwatch.background as? GradientDrawable)?.setColor(color)
     }
 
@@ -694,7 +701,7 @@ class PDFViewerActivity : AppCompatActivity() {
             .setPositiveButton(FPAStrings.save) { _, _ ->
                 val text = input.text.toString()
                 if (text.isNotBlank()) {
-                    drawingView.textColor = currentColor
+                    drawingView.textColor = currentTextColor
                     drawingView.addTextAnnotation(text, x, y)
                     undoStack.add(pageIndex)
                 }
@@ -709,13 +716,20 @@ class PDFViewerActivity : AppCompatActivity() {
     private fun showColorPicker() {
         val colorPicker = ColorPickerDialog(this)
         colorPicker.setOnColorSelectedListener { color ->
-            if (annotationMode == AnnotationMode.HIGHLIGHT) {
-                val c = Color.argb(128, Color.red(color), Color.green(color), Color.blue(color))
-                currentHighlightColor = c
-                drawingViews.forEach { it.setHighlightColor(c) }
-            } else {
-                currentColor = color
-                drawingViews.forEach { it.setColor(color) }
+            when (annotationMode) {
+                AnnotationMode.HIGHLIGHT -> {
+                    val c = Color.argb(128, Color.red(color), Color.green(color), Color.blue(color))
+                    currentHighlightColor = c
+                    drawingViews.forEach { it.setHighlightColor(c) }
+                }
+                AnnotationMode.TEXT -> {
+                    currentTextColor = color
+                    drawingViews.forEach { it.textColor = color }
+                }
+                else -> {
+                    currentColor = color
+                    drawingViews.forEach { it.setColor(color) }
+                }
             }
             updateColorSwatch()
         }
