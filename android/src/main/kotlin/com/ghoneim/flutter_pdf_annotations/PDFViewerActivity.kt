@@ -106,9 +106,30 @@ class PDFViewerActivity : AppCompatActivity() {
     private inner class PdfScaleListener : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             currentZoom = (currentZoom * detector.scaleFactor).coerceIn(minZoom, maxZoom)
-            applyZoom()
+            // Pivot in pdfContainer's local coords via window-relative location lookup
+            val loc = IntArray(2)
+            pdfContainer.getLocationInWindow(loc)
+            pdfContainer.pivotX = detector.focusX - loc[0]
+            pdfContainer.pivotY = detector.focusY - loc[1]
+            pdfContainer.scaleX = currentZoom
+            pdfContainer.scaleY = currentZoom
             return true
         }
+
+        override fun onScaleEnd(detector: ScaleGestureDetector) {
+            // Commit: reset the scale transform and update actual layout dimensions so
+            // scroll range is correct and DrawingView matrices reflect the new size.
+            pdfContainer.scaleX = 1f
+            pdfContainer.scaleY = 1f
+            applyZoom()
+        }
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (annotationMode == AnnotationMode.NONE) {
+            scaleGestureDetector.onTouchEvent(ev)
+        }
+        return super.dispatchTouchEvent(ev)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -137,7 +158,6 @@ class PDFViewerActivity : AppCompatActivity() {
         scrollView.setBackgroundColor(Color.parseColor("#EEEEEE"))
 
         scaleGestureDetector = ScaleGestureDetector(this, PdfScaleListener())
-        scrollView.scaleGestureDetector = scaleGestureDetector
 
         pdfContainer = LinearLayout(this)
         pdfContainer.orientation = LinearLayout.VERTICAL
@@ -958,11 +978,8 @@ class PDFViewerActivity : AppCompatActivity() {
 
 private class LockableScrollView(context: Context) : ScrollView(context) {
     var scrollingEnabled = true
-    var scaleGestureDetector: ScaleGestureDetector? = null
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean =
         if (scrollingEnabled) super.onInterceptTouchEvent(ev) else false
-    override fun onTouchEvent(ev: MotionEvent): Boolean {
-        scaleGestureDetector?.onTouchEvent(ev)
-        return if (scrollingEnabled) super.onTouchEvent(ev) else false
-    }
+    override fun onTouchEvent(ev: MotionEvent): Boolean =
+        if (scrollingEnabled) super.onTouchEvent(ev) else false
 }
