@@ -73,6 +73,15 @@ class PDFViewerActivity : AppCompatActivity() {
     // Progress overlay for save
     private var progressOverlay: FrameLayout? = null
 
+    // Zoom state
+    private var currentZoom = 1f
+    private val minZoom = 1f
+    private val maxZoom = 4f
+    private val pageContainers = mutableListOf<FrameLayout>()
+    private val pageImageViews = mutableListOf<ImageView>()
+    private val originalPageHeights = mutableListOf<Int>()
+    private lateinit var scaleGestureDetector: ScaleGestureDetector
+
     // Ensures Flutter is notified exactly once per session.
     private var resultReported = false
 
@@ -92,6 +101,14 @@ class PDFViewerActivity : AppCompatActivity() {
         if (resultReported) return
         resultReported = true
         FlutterPdfAnnotationsPlugin.notifySaveError(message)
+    }
+
+    private inner class PdfScaleListener : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScale(detector: ScaleGestureDetector): Boolean {
+            currentZoom = (currentZoom * detector.scaleFactor).coerceIn(minZoom, maxZoom)
+            applyZoom()
+            return true
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -118,6 +135,9 @@ class PDFViewerActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT
         )
         scrollView.setBackgroundColor(Color.parseColor("#EEEEEE"))
+
+        scaleGestureDetector = ScaleGestureDetector(this, PdfScaleListener())
+        scrollView.scaleGestureDetector = scaleGestureDetector
 
         pdfContainer = LinearLayout(this)
         pdfContainer.orientation = LinearLayout.VERTICAL
@@ -475,6 +495,11 @@ class PDFViewerActivity : AppCompatActivity() {
             return
         }
 
+        // Reset zoom when entering annotation mode
+        if (mode != AnnotationMode.NONE && annotationMode == AnnotationMode.NONE) {
+            resetZoom()
+        }
+
         annotationMode = if (annotationMode == mode) AnnotationMode.NONE else mode
         scrollView.scrollingEnabled = annotationMode == AnnotationMode.NONE
         val isDrawing = annotationMode == AnnotationMode.DRAW
@@ -580,6 +605,27 @@ class PDFViewerActivity : AppCompatActivity() {
         (colorSwatch.background as? GradientDrawable)?.setColor(color)
     }
 
+    private fun applyZoom() {
+        for (i in pageContainers.indices) {
+            val newHeight = (originalPageHeights[i] * currentZoom).toInt()
+            pageContainers[i].layoutParams = (pageContainers[i].layoutParams as? LinearLayout.LayoutParams)?.apply {
+                height = newHeight
+            } ?: LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, newHeight)
+        }
+        pdfContainer.requestLayout()
+
+        for (i in pageImageViews.indices) {
+            pageImageViews[i].post {
+                drawingViews.getOrNull(i)?.setTransformMatrix(pageImageViews[i].imageMatrix)
+            }
+        }
+    }
+
+    private fun resetZoom() {
+        currentZoom = 1f
+        applyZoom()
+    }
+
     private fun openAndRenderPdf(filePath: String) {
         try {
             val file = File(filePath)
@@ -625,6 +671,8 @@ class PDFViewerActivity : AppCompatActivity() {
             page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
 
             val frameLayout = FrameLayout(this)
+            pageContainers.add(frameLayout)
+            originalPageHeights.add(frameHeight)
             pdfContainer.addView(
                 frameLayout,
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, frameHeight)
@@ -638,6 +686,7 @@ class PDFViewerActivity : AppCompatActivity() {
                 layoutParams = FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             }
+            pageImageViews.add(imageView)
 
             val drawingView = DrawingView(this).apply {
                 layoutParams = FrameLayout.LayoutParams(
@@ -909,8 +958,11 @@ class PDFViewerActivity : AppCompatActivity() {
 
 private class LockableScrollView(context: Context) : ScrollView(context) {
     var scrollingEnabled = true
+    var scaleGestureDetector: ScaleGestureDetector? = null
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean =
         if (scrollingEnabled) super.onInterceptTouchEvent(ev) else false
-    override fun onTouchEvent(ev: MotionEvent): Boolean =
-        if (scrollingEnabled) super.onTouchEvent(ev) else false
+    override fun onTouchEvent(ev: MotionEvent): Boolean {
+        scaleGestureDetector?.onTouchEvent(ev)
+        return if (scrollingEnabled) super.onTouchEvent(ev) else false
+    }
 }
