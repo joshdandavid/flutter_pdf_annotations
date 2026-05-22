@@ -336,7 +336,12 @@ class DrawingView(context: Context) : View(context) {
         }
 
         // Paths
-        paths.forEach { a -> paint.color = a.color; paint.strokeWidth = a.strokeWidth; canvas.drawPath(a.path, paint) }
+        val pathPaint = Paint(paint)
+        paths.forEach { a ->
+            pathPaint.color = a.color
+            pathPaint.strokeWidth = a.strokeWidth
+            canvas.drawPath(a.path, pathPaint)
+        }
         currentPath?.let { canvas.drawPath(it, paint) }
 
         // Image placement hint
