@@ -77,10 +77,8 @@ class PDFViewerActivity : AppCompatActivity() {
     private var currentZoom = 1f
     private val minZoom = 1f
     private val maxZoom = 4f
-    private val pageContainers = mutableListOf<FrameLayout>()
-    private val pageImageViews = mutableListOf<ImageView>()
-    private val originalPageHeights = mutableListOf<Int>()
     private lateinit var scaleGestureDetector: ScaleGestureDetector
+    private var isPinching = false
 
     // Ensures Flutter is notified exactly once per session.
     private var resultReported = false
@@ -117,18 +115,37 @@ class PDFViewerActivity : AppCompatActivity() {
         }
 
         override fun onScaleEnd(detector: ScaleGestureDetector) {
-            // Commit: reset the scale transform and update actual layout dimensions so
-            // scroll range is correct and DrawingView matrices reflect the new size.
-            pdfContainer.scaleX = 1f
-            pdfContainer.scaleY = 1f
-            applyZoom()
+            // Persist the visual zoom — leaving scaleX/scaleY at currentZoom means
+            // the page stays zoomed for annotation. Android transforms touch coords
+            // through the view hierarchy automatically, so DrawingView still maps
+            // touches to bitmap space correctly.
         }
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (annotationMode == AnnotationMode.NONE) {
-            scaleGestureDetector.onTouchEvent(ev)
+        scaleGestureDetector.onTouchEvent(ev)
+
+        val action = ev.actionMasked
+
+        // When the 2nd finger lands, cancel any in-flight child touch (e.g. a
+        // drawing stroke that started with the first finger) and swallow events
+        // until all fingers are up so the pinch isn't interpreted as drawing.
+        if (action == MotionEvent.ACTION_POINTER_DOWN && ev.pointerCount >= 2 && !isPinching) {
+            isPinching = true
+            val cancel = MotionEvent.obtain(ev)
+            cancel.action = MotionEvent.ACTION_CANCEL
+            super.dispatchTouchEvent(cancel)
+            cancel.recycle()
+            return true
         }
+
+        if (isPinching) {
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                isPinching = false
+            }
+            return true
+        }
+
         return super.dispatchTouchEvent(ev)
     }
 
@@ -515,11 +532,6 @@ class PDFViewerActivity : AppCompatActivity() {
             return
         }
 
-        // Reset zoom when entering annotation mode
-        if (mode != AnnotationMode.NONE && annotationMode == AnnotationMode.NONE) {
-            resetZoom()
-        }
-
         annotationMode = if (annotationMode == mode) AnnotationMode.NONE else mode
         scrollView.scrollingEnabled = annotationMode == AnnotationMode.NONE
         val isDrawing = annotationMode == AnnotationMode.DRAW
@@ -625,27 +637,6 @@ class PDFViewerActivity : AppCompatActivity() {
         (colorSwatch.background as? GradientDrawable)?.setColor(color)
     }
 
-    private fun applyZoom() {
-        for (i in pageContainers.indices) {
-            val newHeight = (originalPageHeights[i] * currentZoom).toInt()
-            pageContainers[i].layoutParams = (pageContainers[i].layoutParams as? LinearLayout.LayoutParams)?.apply {
-                height = newHeight
-            } ?: LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, newHeight)
-        }
-        pdfContainer.requestLayout()
-
-        for (i in pageImageViews.indices) {
-            pageImageViews[i].post {
-                drawingViews.getOrNull(i)?.setTransformMatrix(pageImageViews[i].imageMatrix)
-            }
-        }
-    }
-
-    private fun resetZoom() {
-        currentZoom = 1f
-        applyZoom()
-    }
-
     private fun openAndRenderPdf(filePath: String) {
         try {
             val file = File(filePath)
@@ -691,8 +682,6 @@ class PDFViewerActivity : AppCompatActivity() {
             page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
 
             val frameLayout = FrameLayout(this)
-            pageContainers.add(frameLayout)
-            originalPageHeights.add(frameHeight)
             pdfContainer.addView(
                 frameLayout,
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, frameHeight)
@@ -706,7 +695,6 @@ class PDFViewerActivity : AppCompatActivity() {
                 layoutParams = FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             }
-            pageImageViews.add(imageView)
 
             val drawingView = DrawingView(this).apply {
                 layoutParams = FrameLayout.LayoutParams(
