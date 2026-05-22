@@ -200,6 +200,7 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
     private var currentPath: UIBezierPath?
     private var currentAnnotation: PDFAnnotation?
     private var panGesture: UIPanGestureRecognizer!
+    private var twoFingerPanGesture: UIPanGestureRecognizer!
     private var drawingButton: UIButton!
     private var eraserButton: UIButton!
     private var highlightButton: UIButton!
@@ -629,6 +630,13 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
         panGesture.delaysTouchesEnded = true
         panGesture.maximumNumberOfTouches = 1  // single finger only; pinch handled separately
         pdfView.addGestureRecognizer(panGesture)
+
+        twoFingerPanGesture = UIPanGestureRecognizer(target: self, action: #selector(handleTwoFingerPanGesture(_:)))
+        twoFingerPanGesture.minimumNumberOfTouches = 2
+        twoFingerPanGesture.maximumNumberOfTouches = 2
+        twoFingerPanGesture.cancelsTouchesInView = true
+        twoFingerPanGesture.isEnabled = false
+        pdfView.addGestureRecognizer(twoFingerPanGesture)
     }
 
     private func setupTapGesture() {
@@ -654,12 +662,14 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
             pdfView.gestureRecognizers?.forEach { $0.isEnabled = false }
             scrollView = findScrollView(in: pdfView); scrollView?.isScrollEnabled = false
             panGesture.isEnabled = true
+            twoFingerPanGesture.isEnabled = true
             drawingButton.setImage(UIImage(systemName: "pencil"), for: .normal)
             drawingButton.tintColor = .systemBlue
             showOptionsPanel()
         } else {
             pdfView.gestureRecognizers = originalGestureRecognizers
             scrollView?.isScrollEnabled = true
+            twoFingerPanGesture.isEnabled = false
             drawingButton.setImage(UIImage(systemName: "pencil.slash"), for: .normal)
             drawingButton.tintColor = .secondaryLabel
             hideOptionsPanel()
@@ -687,9 +697,11 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
             pdfView.gestureRecognizers?.forEach { $0.isEnabled = false }
             scrollView = findScrollView(in: pdfView); scrollView?.isScrollEnabled = false
             panGesture.isEnabled = true
+            twoFingerPanGesture.isEnabled = true
             eraserButton.tintColor = .systemOrange
         } else {
             pdfView.gestureRecognizers = originalGestureRecognizers; scrollView?.isScrollEnabled = true
+            twoFingerPanGesture.isEnabled = false
             eraserButton.tintColor = .secondaryLabel
         }
         hideOptionsPanel()
@@ -715,10 +727,12 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
             pdfView.gestureRecognizers?.forEach { $0.isEnabled = false }
             scrollView = findScrollView(in: pdfView); scrollView?.isScrollEnabled = false
             panGesture.isEnabled = true
+            twoFingerPanGesture.isEnabled = true
             highlightButton.tintColor = .systemYellow
             showOptionsPanel()
         } else {
             pdfView.gestureRecognizers = originalGestureRecognizers; scrollView?.isScrollEnabled = true
+            twoFingerPanGesture.isEnabled = false
             highlightButton.tintColor = .secondaryLabel
             hideOptionsPanel()
         }
@@ -748,12 +762,14 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
             pdfView.gestureRecognizers?.forEach { $0.isEnabled = false }
             scrollView = findScrollView(in: pdfView); scrollView?.isScrollEnabled = false
             tapGesture.isEnabled = true
+            twoFingerPanGesture.isEnabled = true
             textButton.tintColor = .systemGreen
             showOptionsPanel()
             updateColorSwatch()
         } else {
             pdfView.gestureRecognizers = originalGestureRecognizers; scrollView?.isScrollEnabled = true
             tapGesture.isEnabled = false
+            twoFingerPanGesture.isEnabled = false
             textButton.tintColor = .secondaryLabel
             hideOptionsPanel()
         }
@@ -866,6 +882,28 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
     }
 
     // MARK: - Pan gesture dispatcher
+
+    @objc private func handleTwoFingerPanGesture(_ gesture: UIPanGestureRecognizer) {
+        guard isDrawingEnabled || isEraserMode || isHighlightMode || isTextMode,
+              pdfView.scaleFactor > pdfView.minScaleFactor + 0.01,
+              let sv = scrollView ?? findScrollView(in: pdfView) else {
+            gesture.setTranslation(.zero, in: pdfView)
+            return
+        }
+
+        let translation = gesture.translation(in: pdfView)
+        let minX = -sv.adjustedContentInset.left
+        let minY = -sv.adjustedContentInset.top
+        let maxX = max(minX, sv.contentSize.width - sv.bounds.width + sv.adjustedContentInset.right)
+        let maxY = max(minY, sv.contentSize.height - sv.bounds.height + sv.adjustedContentInset.bottom)
+        let nextOffset = CGPoint(
+            x: min(max(sv.contentOffset.x - translation.x, minX), maxX),
+            y: min(max(sv.contentOffset.y - translation.y, minY), maxY)
+        )
+        sv.setContentOffset(nextOffset, animated: false)
+        gesture.setTranslation(.zero, in: pdfView)
+        overlayView.setNeedsDisplay()
+    }
 
     @objc private func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
         let location = gesture.location(in: pdfView)
@@ -1135,6 +1173,4 @@ private extension Comparable {
         min(max(self, range.lowerBound), range.upperBound)
     }
 }
-
-
 

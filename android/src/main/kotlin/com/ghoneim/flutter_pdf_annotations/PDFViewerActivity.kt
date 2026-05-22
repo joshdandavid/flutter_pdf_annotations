@@ -79,6 +79,10 @@ class PDFViewerActivity : AppCompatActivity() {
     private val maxZoom = 4f
     private lateinit var scaleGestureDetector: ScaleGestureDetector
     private var isPinching = false
+    private var zoomTranslationX = 0f
+    private var zoomTranslationY = 0f
+    private var lastTwoFingerFocusX = 0f
+    private var lastTwoFingerFocusY = 0f
 
     // Ensures Flutter is notified exactly once per session.
     private var resultReported = false
@@ -102,15 +106,21 @@ class PDFViewerActivity : AppCompatActivity() {
     }
 
     private inner class PdfScaleListener : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScaleBegin(detector: ScaleGestureDetector): Boolean = true
+
         override fun onScale(detector: ScaleGestureDetector): Boolean {
-            currentZoom = (currentZoom * detector.scaleFactor).coerceIn(minZoom, maxZoom)
-            // Pivot in pdfContainer's local coords via window-relative location lookup
-            val loc = IntArray(2)
-            pdfContainer.getLocationInWindow(loc)
-            pdfContainer.pivotX = detector.focusX - loc[0]
-            pdfContainer.pivotY = detector.focusY - loc[1]
-            pdfContainer.scaleX = currentZoom
-            pdfContainer.scaleY = currentZoom
+            val oldZoom = currentZoom
+            val newZoom = (currentZoom * detector.scaleFactor).coerceIn(minZoom, maxZoom)
+            if (newZoom == oldZoom) return true
+
+            val focus = zoomFocusInContent(detector.focusX, detector.focusY)
+            val focusX = focus.x
+            val focusY = focus.y
+            val zoomRatio = newZoom / oldZoom
+            zoomTranslationX = focusX - (focusX - zoomTranslationX) * zoomRatio
+            zoomTranslationY = focusY - (focusY - zoomTranslationY) * zoomRatio
+            currentZoom = newZoom
+            applyPdfTransform()
             return true
         }
 
@@ -132,6 +142,9 @@ class PDFViewerActivity : AppCompatActivity() {
         // until all fingers are up so the pinch isn't interpreted as drawing.
         if (action == MotionEvent.ACTION_POINTER_DOWN && ev.pointerCount >= 2 && !isPinching) {
             isPinching = true
+            val focus = twoFingerFocus(ev)
+            lastTwoFingerFocusX = focus.x
+            lastTwoFingerFocusY = focus.y
             val cancel = MotionEvent.obtain(ev)
             cancel.action = MotionEvent.ACTION_CANCEL
             super.dispatchTouchEvent(cancel)
@@ -140,6 +153,14 @@ class PDFViewerActivity : AppCompatActivity() {
         }
 
         if (isPinching) {
+            if (action == MotionEvent.ACTION_MOVE && ev.pointerCount >= 2 && currentZoom > minZoom) {
+                val focus = twoFingerFocus(ev)
+                zoomTranslationX += focus.x - lastTwoFingerFocusX
+                zoomTranslationY += focus.y - lastTwoFingerFocusY
+                lastTwoFingerFocusX = focus.x
+                lastTwoFingerFocusY = focus.y
+                applyPdfTransform()
+            }
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
                 isPinching = false
             }
@@ -147,6 +168,55 @@ class PDFViewerActivity : AppCompatActivity() {
         }
 
         return super.dispatchTouchEvent(ev)
+    }
+
+    private fun twoFingerFocus(ev: MotionEvent): PointF {
+        val first = 0
+        val second = if (ev.actionMasked == MotionEvent.ACTION_POINTER_UP) {
+            if (ev.actionIndex == 0) 1 else 0
+        } else {
+            1
+        }
+        return PointF(
+            (ev.getX(first) + ev.getX(second)) / 2f,
+            (ev.getY(first) + ev.getY(second)) / 2f
+        )
+    }
+
+    private fun zoomFocusInContent(windowX: Float, windowY: Float): PointF {
+        val loc = IntArray(2)
+        scrollView.getLocationInWindow(loc)
+        return PointF(
+            windowX - loc[0] + scrollView.scrollX,
+            windowY - loc[1] + scrollView.scrollY
+        )
+    }
+
+    private fun applyPdfTransform() {
+        if (!::pdfContainer.isInitialized || !::scrollView.isInitialized) return
+
+        if (currentZoom <= minZoom) {
+            currentZoom = minZoom
+            zoomTranslationX = 0f
+            zoomTranslationY = 0f
+        } else {
+            val viewportWidth = scrollView.width.toFloat().coerceAtLeast(1f)
+            val viewportHeight = scrollView.height.toFloat().coerceAtLeast(1f)
+            val contentWidth = pdfContainer.width.toFloat().coerceAtLeast(viewportWidth)
+            val contentHeight = pdfContainer.height.toFloat().coerceAtLeast(viewportHeight)
+            val maxX = ((contentWidth * currentZoom) - viewportWidth).coerceAtLeast(0f)
+            val maxY = ((contentHeight * currentZoom) - viewportHeight).coerceAtLeast(0f)
+
+            zoomTranslationX = zoomTranslationX.coerceIn(-maxX, 0f)
+            zoomTranslationY = zoomTranslationY.coerceIn(-maxY, 0f)
+        }
+
+        pdfContainer.pivotX = 0f
+        pdfContainer.pivotY = 0f
+        pdfContainer.scaleX = currentZoom
+        pdfContainer.scaleY = currentZoom
+        pdfContainer.translationX = zoomTranslationX
+        pdfContainer.translationY = zoomTranslationY
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
