@@ -76,7 +76,7 @@ class PDFViewerActivity : AppCompatActivity() {
     // Zoom state
     private var currentZoom = 1f
     private val minZoom = 1f
-    private val maxZoom = 4f
+    private val maxZoom = Float.MAX_VALUE
     private lateinit var scaleGestureDetector: ScaleGestureDetector
     private var isPinching = false
     private var zoomTranslationX = 0f
@@ -453,9 +453,9 @@ class PDFViewerActivity : AppCompatActivity() {
         segBg.setStroke(dpToPx(1), Color.parseColor("#009688"))
         sizeContainer.background = segBg
 
-        sizeSmallBtn = makeSizeButton("S", 3f)
-        sizeMediumBtn = makeSizeButton("M", 8f)
-        sizeLargeBtn = makeSizeButton("L", 18f)
+        sizeSmallBtn = makeSizeButton("S", 3f, 24f)
+        sizeMediumBtn = makeSizeButton("M", 8f, 40f)
+        sizeLargeBtn = makeSizeButton("L", 18f, 60f)
 
         val segBtnLp = LinearLayout.LayoutParams(dpToPx(44), dpToPx(36))
         sizeContainer.addView(sizeSmallBtn, segBtnLp)
@@ -566,7 +566,7 @@ class PDFViewerActivity : AppCompatActivity() {
         return container
     }
 
-    private fun makeSizeButton(label: String, strokeSize: Float): TextView {
+    private fun makeSizeButton(label: String, strokeSize: Float, fontSize: Float): TextView {
         val btn = TextView(this)
         btn.text = label
         btn.textSize = 11f
@@ -576,7 +576,10 @@ class PDFViewerActivity : AppCompatActivity() {
         btn.background = bg
         btn.setOnClickListener {
             currentStrokeWidth = strokeSize
-            drawingViews.forEach { it.setStrokeWidth(strokeSize) }
+            drawingViews.forEach {
+                it.setStrokeWidth(strokeSize)
+                it.textFontSize = fontSize
+            }
             updateSizeButtons(label)
         }
         return btn

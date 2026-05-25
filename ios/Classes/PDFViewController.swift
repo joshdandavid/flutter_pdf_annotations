@@ -184,6 +184,7 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
     private let config: PDFAnnotationConfig?
     private var pdfView: PDFView!
     private var penThickness: CGFloat = 5.0
+    private var textFontSize: CGFloat = 18.0
     private var penColor: UIColor = .red
     private var completion: ((String?) -> Void)
 
@@ -481,9 +482,9 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
 
     @objc private func sizeSegmentChanged(_ sender: UISegmentedControl) {
         switch sender.selectedSegmentIndex {
-        case 0: penThickness = 2.0
-        case 1: penThickness = 5.0
-        case 2: penThickness = 10.0
+        case 0: penThickness = 2.0;  textFontSize = 12.0
+        case 1: penThickness = 5.0;  textFontSize = 18.0
+        case 2: penThickness = 10.0; textFontSize = 28.0
         default: break
         }
     }
@@ -801,7 +802,7 @@ class PDFViewController: UIViewController, UIColorPickerViewControllerDelegate {
     }
 
     private func placeText(_ text: String, at point: CGPoint, on page: PDFPage) {
-        let fontSize: CGFloat = 14
+        let fontSize = textFontSize
         let estimatedWidth = CGFloat(text.count) * fontSize * 0.65 + 20
         let textWidth = max(estimatedWidth, 80)
         let textHeight = fontSize * 1.8
